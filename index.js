@@ -9,6 +9,7 @@ const ROUTE_DETAIL = '._css-dTqljZ';
 const MORE_BUTTON = '._css-hvdvaj';
 const CANCELLED_RIDE = '._css-hEBnkv';
 const HOME_PAGE_DATES_TITLE = '._css-gpJWqY';
+const RIDE_ROUTE = '._css-uWqLr'
 
 const ADDRESS_TO_AVOID = 'Industrial Belgraf';
 
@@ -23,7 +24,7 @@ const FILE_NAME = 'results'
 const baseConfig = {
   executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   userDataDir: "C:\\Users\\breno\\AppData\\Local\\Google\\Chrome\\User Data",
-  headless: !false
+  headless: false
 };
 
 let formatedRides = [];
@@ -32,8 +33,8 @@ let shouldRepeat = true;
 let fileContent = fs.readFileSync(FILE_NAME, 'utf-8');
 
 let lines = fileContent.split('\n');
-let latestRecord = JSON.parse(lines[0]);
-let oldestRecord = JSON.parse(lines[lines.length-2]);
+// let latestRecord = JSON.parse(lines[0]);
+// let oldestRecord = JSON.parse(lines[lines.length-2]);
 
 (
   async () => {
@@ -44,7 +45,7 @@ let oldestRecord = JSON.parse(lines[lines.length-2]);
 
     try {
 
-      await checkAndFillLatestResults(homePage, browser);
+      // await checkAndFillLatestResults(homePage, browser);
       await processOldRides(homePage, browser);
      
     } catch (err) {
@@ -80,28 +81,60 @@ const checkAndFillLatestResults = async (homePage, browser) => {
   let pageDates = await getHomePageDates(homePage);
   latestRecord['date'] = getDateFromRideDate(latestRecord['date'])
   
-  let ridesToBeSaved;
+  let ridesLoaded= [];
   while(pageDates[0] >= latestRecord['date'] || pageDates[1] >= latestRecord['date']){
     console.log(`Processing results for: ${pageDates[0].toLocaleDateString()} - ${pageDates[1].toLocaleDateString()}`);
-    ridesToBeSaved = await getRidesFromHomePage(homePage, browser);
-    // fs.appendFileSync(FILE_NAME, )+"\n")
+    ridesLoaded = [...ridesLoaded, ...(await getRidesFromHomePage(homePage, browser))];
 
     await homePage.click(MORE_BUTTON);
     pageDates = await getHomePageDates(homePage);
+  } 
+  ridesLoaded = ridesLoaded.reverse();
+
+  let ridesToBeSaved = [];
+  for (let i = 0; i < ridesLoaded.length; i++) {
+    if(latestRecord['id'] == JSON.parse(ridesLoaded[i])['id']){
+      console.log('ended')
+      i = ridesLoaded.length;
+      return;
+    }
+    ridesToBeSaved.push(ridesLoaded[i]);
   }
+  ridesToBeSaved = ridesToBeSaved.reverse();
+
+  if(ridesToBeSaved.length > 0){
+    ridesToBeSaved.reverse();
+    let endResult = '';
+
+    ridesToBeSaved.forEach(ride => {
+      endResult=endResult+ride+'\n';
+    })
+
+    prependFile(endResult);
+  }
+  
+  console.log("Finished Processing latest results.")
 }
 
 const processOldRides = async (homePage, browser) => {
   await goToHomePage(homePage);
   
   let pageDates = await getHomePageDates(homePage);
-  latestRecord['date'] = getDateFromRideDate(latestRecord['date'])
-  
-  let ridesToBeSaved;
-  while(pageDates[0] >= latestRecord['date'] || pageDates[1] >= latestRecord['date']){
+  let Jan2024 = new Date("01/01/2024");
+ 
+  let ridesToBeSaved= [];
+  let endResult = '';
+
+  while(pageDates[0] >= Jan2024 || pageDates[1] >= Jan2024){
     console.log(`Processing results for: ${pageDates[0].toLocaleDateString()} - ${pageDates[1].toLocaleDateString()}`);
+    await new Promise((resolve) => setTimeout(resolve, 4000))
     ridesToBeSaved = await getRidesFromHomePage(homePage, browser);
-    // fs.appendFileSync(FILE_NAME, )+"\n")
+
+    endResult = '';
+    ridesToBeSaved.forEach(ride => {
+      endResult=endResult+ride+'\n';
+    })
+    fs.appendFileSync(FILE_NAME, endResult);
 
     await homePage.click(MORE_BUTTON);
     pageDates = await getHomePageDates(homePage);
@@ -236,5 +269,24 @@ const getRideDetails = async (ridePage, rideId) => {
     details[String(PRICE_KEY)] = detail.split(PRICE_PRESET)[1]
   })
 
+  rawDetails = new Array(await ridePage
+    .evaluate(() => {
+      const elements = document.querySelectorAll('._css-uWqLr');
+      return Array.from(elements).map(element => element.innerHTML);
+    })
+  ).map(detail => String(detail));
+
+  let addesses = (String(rawDetails).split('_css-gNrRQp">'));
+  details['start'] = addesses[1].split('</div>')[0]
+  details['destination'] = addesses[2].split('</div>')[0]
+
   return details;
 } 
+
+const prependFile = (dataToPrepend) => {
+  let fileContent = fs.readFileSync(FILE_NAME, 'utf-8');
+  
+  let newContent = dataToPrepend + fileContent;
+
+  fs.writeFileSync(FILE_NAME, newContent, 'utf8');
+}
